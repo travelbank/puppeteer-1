@@ -64,7 +64,8 @@ class Tracing {
     let fulfill;
     const contentPromise = new Promise(x => fulfill = x);
     this._client.once('Tracing.tracingComplete', event => {
-      helper.readProtocolStream(this._client, event.stream, this._path).then(fulfill);
+      const readable = helper.readableProtocolStream(this._client, event.stream);
+      helper.readProtocolStream(readable, this._path).then(fulfill);
     });
     await this._client.send('Tracing.end');
     this._recording = false;

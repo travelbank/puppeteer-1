@@ -19,6 +19,7 @@ import debug = require('debug');
 import fs = require('fs');
 import promisify = require('./promisify');
 import {CDPSession} from './Connection';
+import {Readable} from 'stream';
 
 const {TimeoutError} = Errors;
 
@@ -192,26 +193,40 @@ async function waitWithTimeout<T extends any>(promise: Promise<T>, taskName: str
   }
 }
 
-async function readProtocolStream(client: CDPSession, handle: string, path?: string): Promise<Buffer> {
+function readableProtocolStream(client: CDPSession, handle: string): Readable {
+  const readable = new Readable();
   let eof = false;
-  let file;
-  if (path)
-    file = await openAsync(path, 'w');
-  const bufs = [];
-  while (!eof) {
-    const response = await client.send('IO.read', {handle});
-    eof = response.eof;
-    const buf = Buffer.from(response.data, response.base64Encoded ? 'base64' : undefined);
-    bufs.push(buf);
-    if (path)
-      await writeAsync(file, buf);
+  readable._read = (): void => {
+    if (eof)
+      return null;
+    client
+        .send('IO.read', {handle})
+        .then(response => {
+          readable.push(response.data, response.base64Encoded ? 'base64' : undefined);
+          if (response.eof) {
+            readable.push(null);
+            eof = true;
+            client.send('IO.close', {handle});
+          }
+        });
+  };
+
+  return readable;
+}
+
+async function readProtocolStream(readable: Readable, path?: string): Promise<Buffer> {
+  const file = path ? await openAsync(path, 'w') : undefined;
+  const buffers = [];
+  for await (const chunk of readable) {
+    buffers.push(chunk);
+    if (file)
+      await writeAsync(file, chunk);
   }
-  if (path)
+  if (file)
     await closeAsync(file);
-  await client.send('IO.close', {handle});
-  let resultBuffer = null;
+  let resultBuffer: Buffer = null;
   try {
-    resultBuffer = Buffer.concat(bufs);
+    resultBuffer = Buffer.concat(buffers);
   } finally {
     return resultBuffer;
   }
@@ -221,6 +236,7 @@ async function readProtocolStream(client: CDPSession, handle: string, path?: str
 export const helper = {
   promisify,
   evaluationString,
+  readableProtocolStream,
   readProtocolStream,
   waitWithTimeout,
   waitForEvent,

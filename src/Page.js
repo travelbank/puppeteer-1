@@ -17,6 +17,9 @@
 const fs = require('fs');
 const EventEmitter = require('events');
 const mime = require('mime');
+// Readable is used only as a typedef
+// eslint-disable-next-line no-unused-vars
+const {Readable} = require('stream');
 const {Events} = require('./Events');
 // CDPSession is used only as a typedef
 // eslint-disable-next-line no-unused-vars
@@ -988,10 +991,10 @@ class Page extends EventEmitter {
   }
 
   /**
-   * @param {!PDFOptions=} options
-   * @return {!Promise<!Buffer>}
+   * @param {!PDFReadableOptions=} options
+   * @return {!Promise<!Readable>}
    */
-  async pdf(options = {}) {
+  async pdfReadable(options = {}) {
     const {
       scale = 1,
       displayHeaderFooter = false,
@@ -1001,8 +1004,7 @@ class Page extends EventEmitter {
       landscape = false,
       pageRanges = '',
       preferCSSPageSize = false,
-      margin = {},
-      path = null
+      margin = {}
     } = options;
 
     let paperWidth = 8.5;
@@ -1039,7 +1041,18 @@ class Page extends EventEmitter {
       pageRanges,
       preferCSSPageSize
     });
-    return await helper.readProtocolStream(this._client, result.stream, path);
+
+    return helper.readableProtocolStream(this._client, result.stream);
+  }
+
+  /**
+   * @param {!PDFOptions=} options
+   * @return {!Promise<!Buffer>}
+   */
+  async pdf(options = {}) {
+    const {path = undefined} = options;
+    const readable = await this.pdfReadable(options);
+    return await helper.readProtocolStream(readable, path);
   }
 
   /**
@@ -1178,6 +1191,22 @@ class Page extends EventEmitter {
  * @property {boolean=} preferCSSPageSize
  * @property {!{top?: string|number, bottom?: string|number, left?: string|number, right?: string|number}=} margin
  * @property {string=} path
+ */
+
+/**
+ * @typedef {Object} PDFReadableOptions
+ * @property {number=} scale
+ * @property {boolean=} displayHeaderFooter
+ * @property {string=} headerTemplate
+ * @property {string=} footerTemplate
+ * @property {boolean=} printBackground
+ * @property {boolean=} landscape
+ * @property {string=} pageRanges
+ * @property {string=} format
+ * @property {string|number=} width
+ * @property {string|number=} height
+ * @property {boolean=} preferCSSPageSize
+ * @property {!{top?: string|number, bottom?: string|number, left?: string|number, right?: string|number}=} margin
  */
 
 /**
